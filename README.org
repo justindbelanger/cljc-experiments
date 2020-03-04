@@ -1,0 +1,6 @@
+* CLJC Experiments
+
+* What is this?
+It's a collection of "small" experiments and recipes in Clojure(Script).
+Most of these are things that I'll only use once, or perhaps
+that are too small to be turned into a standalone code library.
