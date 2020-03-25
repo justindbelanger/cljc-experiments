@@ -95,6 +95,12 @@
                       distinct)]
       (cons header
             (map vals ms))))
+  (defn- coerce-translation
+    [t]
+    (cond
+      (keyword? t) (pr-str t)
+      (string? t) t
+      :else (str t)))
   ;; convert into a seq of maps with locale-name, translations
   (defn- transform-for-docjure [locale]
     ((juxt :locale-name :translations)
@@ -103,8 +109,8 @@
          (update :translations (fn [translations]
                                  (maps->table
                                   (map (fn [[message-id translation]]
-                                         {"message ID"  message-id
-                                          "translation" translation})
+                                         {"message ID"  (coerce-translation message-id)
+                                          "translation" (coerce-translation translation)})
                                        translations)))))))
   (def locales (->> locale-files
                     (map (fn [file]
