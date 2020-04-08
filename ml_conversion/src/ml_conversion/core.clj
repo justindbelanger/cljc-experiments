@@ -1,32 +1,16 @@
 (ns ml-conversion.core
   (:require [camel-snake-kebab.core :as csk]
             [clojure.data.json :as json]
+            [clojure.java.io :as io]
+            [clojure.string :as string]
             [dk.ative.docjure.spreadsheet :as ss]))
 
-;; read files in
-;; convert to EDN
-;; use same transformations as in NZN
-;; need to map manifest and features to cells, columns, rows.
-
-(defn manifest-path
+(defn make-manifest-path
   [surrogate-dir]
-  (str surrogate-dir "/" "_manifest.json"))
-
-(defn features-paths
-  [manifest surrogate-dir]
-  (->> manifest
-       :tf/models
-       (map :path)
-       (map (fn [path]
-              (let [tfjs-model-dir (-> (str surrogate-dir "/" path)
-                                       clojure.java.io/file
-                                       .getAbsoluteFile
-                                       .getParent)]
-                (str tfjs-model-dir "/" "_features.json"))))))
-
-#_(defn append
-  "Adds the given `rows` to the given `table`"
-  )
+  (-> surrogate-dir
+      io/file
+      (io/file "_manifest.json")
+      .getCanonicalPath))
 
 (defn transpose
   "Transposes the 2D matrix `A`,
@@ -36,12 +20,12 @@
 
 (defn maps->table
   [ms]
-  (let [header (-> ms
-                   (map keys)
-                   (mapcat identity)
-                   distinct
-                   sort
-                   vec)]
+  (let [header (->> ms
+                    (map keys)
+                    (mapcat identity)
+                    distinct
+                    sort
+                    vec)]
     (vec (cons header
                (map (fn [m]
                       (mapv (fn [k]
@@ -53,8 +37,8 @@
   [named]
   (-> named
       (name)
-      (clojure.string/replace "-" " ")
-      (clojure.string/capitalize)))
+      (string/replace "-" " ")
+      (string/capitalize)))
 
 (defn manifest->table
   [manifest]
@@ -71,38 +55,45 @@
 
 (defn features->table
   [features]
-  (let [table            (maps->table (map #(update %
-                                                    :kind
-                                                    humanize)
-                                           (map #(update %
-                                                         :feature/id
-                                                         humanize)
-                                                (map #(select-keys %
-                                                                   [:kind
-                                                                    :ui/control
-                                                                    :notes
-                                                                    :ui/position
-                                                                    :tf/training-min
-                                                                    :tf/training-max
-                                                                    :energy-plus-label
-                                                                    :feature/id])))))
-        renamed-header   (update table
-                                 0
-                                 (fn [row]
-                                   (replace {:kind              :type
-                                             :ui/control        :kind
-                                             :ui/position       :sub_index
-                                             :tf/training-min   :min
-                                             :tf/training-max   :max
-                                             :energy-plus-label :label
-                                             :feature/id        :descriptive-name}
-                                            row)))
-        humanized-header (update table
-                                 0
-                                 (fn [row]
-                                   (mapv humanize
-                                         row)))]
-    humanized-header))
+  (let [table   (->> features
+                     (map #(select-keys %
+                                        [:kind
+                                         :ui/control
+                                         :units
+                                         :notes
+                                         :ui/position
+                                         :tf/training-min
+                                         :tf/training-max
+                                         :formula
+                                         :default
+                                         :energy-plus-label
+                                         :feature/id]))
+                     (map #(update %
+                                   :feature/id
+                                   humanize))
+                     (map #(update %
+                                   :kind
+                                   humanize))
+                     maps->table)
+        cleaned (-> table
+                    (update
+                     0
+                     (fn [row]
+                       (replace {:kind              :type
+                                 :ui/control        :kind
+                                 :ui/position       :sub_index
+                                 :tf/training-min   :min
+                                 :tf/training-max   :max
+                                 :energy-plus-label :label
+                                 :formula           :pyfunction
+                                 :feature/id        :descriptive-name}
+                                row)))
+                    (update
+                     0
+                     (fn [row]
+                       (mapv humanize
+                             row))))]
+    cleaned))
 
 (defn edn->xlsx
   "Converts the `manifest` and `features` from EDN
@@ -117,46 +108,53 @@
                                 [[]
                                  []]
                                 features-table])
-        workbook       (ss/create-workbook {"metadata" table})]
+        worksheets-map {"Metadata" table}
+        workbook       (apply ss/create-workbook
+                              (mapcat identity
+                                      worksheets-map))]
     workbook))
 
 (defn implode-keywords
-  [f]
-  nil)
+  "Reverses the explode-keywords trick of encoding namespaced keywords.
+
+   `{:ui {:pos 1 :category 'foo}} => {:ui/pos 1 :ui/category 'foo}`"
+  [m]
+  (reduce (fn [m' [k v]]
+            (if (map? v)
+              (let [submap (into {} (map (fn [[k' v']] [(keyword (name k) (name k')) v']) v))]
+                (merge m' submap))
+              (assoc m' k v)))
+          {} m))
 
 (defn- post-process-manifest
   [manifest]
-  nil)
-
-#_(defn xlsx->edn
-  "Converts an in-memory Excel workbook to EDN files
-  representing a manifest and features.
-  Note: this doesn't include the TensorFlow model topology and weights."
-  []
-  nil)
+  (update manifest
+          :tf-models
+          (fn [tf-models]
+            (reduce
+             (fn [models' model]
+               (conj models'
+                     (-> model
+                         (update :features (fn [fts]
+                                             (map implode-keywords fts)))
+                         (update :features (fn [fts]
+                                             (map (fn [ft]
+                                                    (update ft :feature/id #(as-> % $ (csk/->kebab-case $) (string/upper-case $) (symbol $)))) fts))))))
+             [] tf-models))))
 
 (defn json->xlsx!
-  "Reads two positional args from standard input,
+  "Accepts two filesystem paths,
   1. the directory where the surrogate's manifest
-     and features are stored, and
+     is stored, and
   2. the file name where the resulting Excel workbook
      will be saved.
-  Converts the given manifest and features files from JSON
+  Converts the given manifest file from JSON
   into an Excel workbook with one worksheet in it."
-  []
-  (let [args          (read-line)
-        surrogate-dir (first args)
-        workbook-dir  (second args)
-        manifest      (post-process-manifest
-                       (json/read-str (manifest-path surrogate-dir)))
-        features      (mapcat :features (:tf-models manifest))
-        #_ (map (comp post-process-features
-                      json/read-str)
-                (features-paths manifest
-                                surrogate-dir))
-        workbook      (json->xlsx manifest features)]
-    (ss/save-workbook! workbook-dir workbook)))
-
-#_(defn xlsx->json!
-  []
-  nil)
+  [{:keys [surrogate-dir workbook-path]}]
+  (let [manifest (-> (make-manifest-path surrogate-dir)
+                     slurp
+                     (json/read-str :key-fn keyword)
+                     post-process-manifest)
+        features (mapcat :features (:tf-models manifest))
+        workbook (edn->xlsx manifest features)]
+    (ss/save-workbook! workbook-path workbook)))
