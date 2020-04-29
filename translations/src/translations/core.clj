@@ -3,6 +3,7 @@
 (comment
   (require '[dk.ative.docjure.spreadsheet :as ss])
   (require '[camel-snake-kebab.core :as cskc])
+  (require '[clojure.edn])
 
   (defn coerce-locale-name
     [locale-name]
@@ -39,6 +40,14 @@
                     ss/row-seq
                     (map row->value-seq))]
       (rows->maps rows)))
+  (defn deserialize-keyword
+    "If `s` matches a regular expression for a keyword,
+    then converts `s` into a keyword.
+    Otherwise provides `s` unchanged."
+    [s]
+    (if-let [found (re-find #"^:[^:]*$" s)]
+      (clojure.edn/read-string found)
+      s))
   (def file "tmp/translations.xlsx")
   (def inbound-workbook (ss/load-workbook-from-file file))
   ;; convert into a single map in which each key is a locale
@@ -49,6 +58,8 @@
          (map (juxt (comp keyword
                           ss/sheet-name)
                     (comp (partial into {})
+                          (partial map (fn [kvp]
+                                         (update kvp 0 deserialize-keyword)))
                           (partial map (juxt :message-id :translation))
                           sheet->maps)))
          (into {})))
@@ -58,7 +69,7 @@
       (.mkdir dir-obj))
     (doseq [[locale-name translations-map] locales-map]
       (spit (str directory "/" (coerce-locale-name locale-name) ".edn")
-            translations-map)))
+            (with-out-str (clojure.pprint/pprint translations-map)))))
 
   ;; converting EDN -> Excel (for handing over to a translator)
   ;; grab all files in a given directory
