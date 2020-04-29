@@ -17,8 +17,6 @@
   ;; assume each worksheet name is the name of a locale
   ;; one column called 'message ID', one column called 'translation'
   ;; convert each row into a map with these keys
-  (def file "tmp/translations.xlsx")
-  (def inbound-workbook (ss/load-workbook-from-file file))
   (defn row->value-seq
     "Helper function to convert a spreadsheet row into a sequence of cell values."
     [row]
@@ -41,6 +39,8 @@
                     ss/row-seq
                     (map row->value-seq))]
       (rows->maps rows)))
+  (def file "tmp/translations.xlsx")
+  (def inbound-workbook (ss/load-workbook-from-file file))
   ;; convert into a single map in which each key is a locale
   ;; and each value is a map of message IDs to translations for that locale
   (def locales-map
@@ -52,8 +52,8 @@
                           (partial map (juxt :message-id :translation))
                           sheet->maps)))
          (into {})))
-  (let [directory "tmp/translations"
-        dir-obj (clojure.java.io/file directory)]
+  (def directory "tmp/translations")
+  (let [dir-obj (clojure.java.io/file directory)]
     (when-not (.exists dir-obj)
       (.mkdir dir-obj))
     (doseq [[locale-name translations-map] locales-map]
