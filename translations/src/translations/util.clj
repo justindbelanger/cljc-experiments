@@ -19,3 +19,14 @@
        (mapcat identity)
        (apply sorted-map-by (fn [k1 k2]
                               (compare (str k1) (str k2))))))
+
+(defn sort-and-save-translations!
+  "Reads in translations from the EDN file at the `location`,
+  sorts the map's keys in ascending order,
+  then overwrites the file with the sorted map."
+  [location]
+  (let [sorted (-> location
+                   slurp
+                   clojure.edn/read-string
+                   sorted-translations-map)]
+    (spit location (with-out-str (clojure.pprint/pprint sorted)))))
