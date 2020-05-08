@@ -39,7 +39,8 @@
     then converts `s` into a keyword.
     Otherwise provides `s` unchanged."
   [s]
-  (if-let [found (re-find #"^:[^:]*$" s)]
+  (if-let [found (when (some? s)
+                   (re-find #"^:[^:]*$" s))]
     (clojure.edn/read-string found)
     s))
 
