@@ -1,0 +1,2 @@
+{:deps  {camel-snake-kebab        {:mvn/version "0.4.1"}
+         clj-python/libpython-clj {:mvn/version "2.00-alpha-5"}}}
