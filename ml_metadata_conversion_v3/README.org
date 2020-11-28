@@ -1,0 +1,10 @@
+#+TITLE: Readme
+
+* What is this project?
+It's an experiment into loading a pickle file (in the original use case,
+one containing metadata about a machine-learning model)
+using [[https://github.com/clj-python/libpython-clj][libpython-clj]].
+
+Doubtful that I'll add anything more to it at this point,
+because I'm not keen on the security risks posed by pickle files,
+but it's good to know that the option exists.
