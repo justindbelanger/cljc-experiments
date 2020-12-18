@@ -45,8 +45,10 @@
   (println "event " event " marked as seen!"))
 
 (defn subscribe!
-  [event-source topic-id consumer-id event-handler]
-  (let [listener-chan (a/chan 1)]
+  [event-source topic-id consumer]
+  (let [{:keys       [event-handler]
+         consumer-id :id} consumer
+        listener-chan     (a/chan 1)]
     (a/sub event-source topic-id listener-chan)
     (a/go-loop []
       (when-let [event (a/<! listener-chan)]
@@ -57,12 +59,15 @@
 (comment
   (def event-input (a/chan 1))
   (def event-source (a/pub event-input :topic/id))
-  (subscribe! event-source :todos :todos-updater (fn [event]
-                                                   (case (:event/type event)
-                                                     :todo-created (println "creating todo item in database!"))))
-  (subscribe! event-source :reporting :batch-report-generator (fn [event]
-                                                                (case (:event/type event)
-                                                                  :report-requested (println "generating report!"))))
+  (subscribe! event-source :todos {:id            :todos-updater
+                                   :event-handler (fn [event]
+                                                    (case (:event/type event)
+                                                      :todo-created (println "creating todo item in database!")))})
+
+  (subscribe! event-source :reporting {:id            :batch-report-generator
+                                       :event-handler (fn [event]
+                                                        (case (:event/type event)
+                                                          :report-requested (println "generating report!")))})
   (a/put! event-input {:topic/id :todos :event/type :todo-created :todo/description "buy groceries"})
   (a/put! event-input {:topic/id :reporting :event/type :report-requested :report/start-date (java.time.LocalDateTime/now) :report/end-date (.plusDays (java.time.LocalDateTime/now) 7)})
   )
